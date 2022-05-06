@@ -48,13 +48,16 @@ def loadxdf(fname, synthetic = False):
         Have this function handle aux stream as well for accelerometer on Cyton
         
     Last Modified:
-        Ollie 09Sep2019
+        Ollie 15Feb22
     """
     # Load dataset from xdf and export eeg_raw, eeg_time, mrk_raw, mrk_time, channels
     streams, fileheader = pyxdf.load_xdf(fname, dejitter_timestamps=False) #ollie 9/11/2019
     
     # Create empty dict to be returned
     EEG = {}
+    
+    # Boolean variable for lack of marker stream
+    has_marker = True # true by default
     
     # Seperate streams
     eeg = None;
@@ -65,9 +68,13 @@ def loadxdf(fname, synthetic = False):
             mrk = stream
         if stream_type.lower() == 'eeg':
             eeg = stream
-    if (eeg == None) or (mrk == None):
+    if (eeg == None) and (mrk == None):
         print('ERROR, EEG AND MARKER STREAM NOT FOUND!')
         return
+        
+    if eeg != None and mrk == None:
+        has_marker = False
+        print('Warning: No marker stream found.')
     
     if synthetic:
         # Load channel data in
@@ -75,25 +82,30 @@ def loadxdf(fname, synthetic = False):
             xdf_channels = pickle.load(fp)
         eeg['info']['desc'] = xdf_channels
         
-    # Create channel structure from stream info    
-    desc = eeg['info']['desc'][0]['channels'][0]['channel']
+    # Create channel structure from stream info
     channel = {}
-    for i in range(int(eeg['info']['channel_count'][0])):
-        channel[desc[i]['label'][0]] = i
+    try:
+        desc = eeg['info']['desc'][0]['channels'][0]['channel']
+        for i in range(int(eeg['info']['channel_count'][0])):
+            channel[desc[i]['label'][0]] = i
+    except:
+        print('Warning: channel ingormation not found.')
             
-    # Let's also create time structures
-    eeg_time = eeg['time_stamps']
-    mrk_time = mrk['time_stamps']
+    
+    
     
     # Populate EEG with data
+    eeg_time = eeg['time_stamps']
     EEG['eeg_data'] = eeg['time_series']
     EEG['eeg_time'] = eeg['time_stamps']
-    EEG['event_data'] = np.array(listFlatten(mrk['time_series']))
-    EEG['event_time'] = mrk['time_stamps']
     EEG['channels'] = channel
     EEG['fs'] = int(eeg['info']['nominal_srate'][0])
     EEG['fs_i'] = int(eeg['info']['nominal_srate'][0]) # Note: This is a constant
-    
+    if has_marker:
+        mrk_time = mrk['time_stamps']
+        EEG['event_data'] = np.array(listFlatten(mrk['time_series']))
+        EEG['event_time'] = mrk['time_stamps']
+
     # If synthetic, pad data with ending 0's
     if synthetic:
         EEG['eeg_data'] = np.vstack((EEG['eeg_data'], np.zeros((10000, int(eeg['info']['channel_count'][0])))))
